@@ -22,6 +22,15 @@ import sav_parse
 import sav_to_resave
 from sav_data.data import CONVEYOR_BELTS, POWER_LINE
 
+# The blueprint designer stores its build volume as three independent tile
+# dimensions (X, Y, Z); each tile is 8 m.  Vanilla designers are cubic
+# (4/5/6 tiles = Mk.1/2/3), but modded designers can be larger and need not be
+# cubic, so we accept any positive size up to a generous sanity ceiling instead
+# of a fixed whitelist.  Naming/identifying a designer from its dimensions is a
+# consumer concern (it depends on which mods are installed) and is intentionally
+# left to callers, not done here.
+MAXIMUM_DESIGNER_DIMENSION = 1024
+
 def parseBlueprint(sbpFile: str):
    with open(sbpFile, "rb") as fin:
       data = fin.read()
@@ -35,14 +44,13 @@ def parseBlueprint(sbpFile: str):
          return f"Unsupported save version {saveVersion}"
       (offset, buildVersion) = sav_parse.parseUint32(offset, data)
       (offset, designerDimensionX) = sav_parse.parseUint32(offset, data)
-      if designerDimensionX != 4 and designerDimensionX != 5 and designerDimensionX != 6:
-         return f"Invalid designer dimension {designerDimensionX}"
       (offset, designerDimensionY) = sav_parse.parseUint32(offset, data)
-      if designerDimensionY != designerDimensionX:
-         raise sav_parse.ParseError(f"Designer Y dimension {designerDimensionY} doesn't match designer X dimension {designerDimensionX}")
       (offset, designerDimensionZ) = sav_parse.parseUint32(offset, data)
-      if designerDimensionZ != designerDimensionX:
-         raise sav_parse.ParseError(f"Designer Z dimension {designerDimensionZ} doesn't match designer X dimension {designerDimensionX}")
+      # Designers may be any positive size and need not be cubic; only reject
+      # values that indicate corrupt data or a misaligned read.
+      for axis, designerDimension in (("X", designerDimensionX), ("Y", designerDimensionY), ("Z", designerDimensionZ)):
+         if designerDimension < 1 or designerDimension > MAXIMUM_DESIGNER_DIMENSION:
+            return f"Invalid designer {axis} dimension {designerDimension}"
 
       ingredients = []
       (offset, ingredientCount) = sav_parse.parseUint32(offset, data)
@@ -149,12 +157,15 @@ def parseBlueprint(sbpFile: str):
       if offset != len(data):
          raise sav_parse.ParseError(f"Position at the end of data mismatch: data {len(data)}, parsing {offset}")
 
-   return [[headerVersion, saveVersion, buildVersion, saveObjectVersionData], [designerDimensionX, ingredients, buildableRecipes], actorAndComponentObjectHeaders, objects]
+   return [[headerVersion, saveVersion, buildVersion, saveObjectVersionData], [(designerDimensionX, designerDimensionY, designerDimensionZ), ingredients, buildableRecipes], actorAndComponentObjectHeaders, objects]
 
 def resaveBlueprint(sbpFile, blueprint):
    versions, summary, objectHeaders, objects = blueprint
    headerVersion, saveVersion, buildVersion, saveObjectVersionData = versions
-   designerDimension, ingredients, buildableRecipes = summary
+   designerDimensions, ingredients, buildableRecipes = summary
+   if isinstance(designerDimensions, int):
+      designerDimensions = (designerDimensions, designerDimensions, designerDimensions)
+   designerDimensionX, designerDimensionY, designerDimensionZ = designerDimensions
 
    objectUE5Version = 0
    if saveVersion >= 53:
@@ -205,9 +216,9 @@ def resaveBlueprint(sbpFile, blueprint):
       sdata.extend(sav_to_resave.addUint32(headerVersion))
       sdata.extend(sav_to_resave.addUint32(saveVersion))
       sdata.extend(sav_to_resave.addUint32(buildVersion))
-      sdata.extend(sav_to_resave.addUint32(designerDimension))
-      sdata.extend(sav_to_resave.addUint32(designerDimension))
-      sdata.extend(sav_to_resave.addUint32(designerDimension))
+      sdata.extend(sav_to_resave.addUint32(designerDimensionX))
+      sdata.extend(sav_to_resave.addUint32(designerDimensionY))
+      sdata.extend(sav_to_resave.addUint32(designerDimensionZ))
 
       sdata.extend(sav_to_resave.addUint32(len(ingredients)))
       for itemCount, item in ingredients:
@@ -248,14 +259,13 @@ def resaveBlueprint(sbpFile, blueprint):
       fout.write(sdata)
 
 def printBlueprintSummary(blueprint, sbpFile):
-   DIMENSION_TO_MK = {4: "Mk.1", 5: "Mk.2", 6: "Mk.3"}
    versions, summary, objectHeaders, objects = blueprint
    headerVersion, saveVersion, buildVersion, saveObjectVersionData = versions
-   designerDimension, ingredients, buildableRecipes = summary
-   designerMk = "Mk.?"
-   if designerDimension in DIMENSION_TO_MK:
-      designerMk = DIMENSION_TO_MK[designerDimension]
-   print(f"{headerVersion}, {saveVersion}, {buildVersion}, {designerDimension}x{designerDimension}x{designerDimension} ({designerMk}) with {len(ingredients)} ingredients, {len(buildableRecipes)} buildables, and {len(objects)} objects: {sbpFile}")
+   designerDimensions, ingredients, buildableRecipes = summary
+   if isinstance(designerDimensions, int):
+      designerDimensions = (designerDimensions, designerDimensions, designerDimensions)
+   designerDimensionX, designerDimensionY, designerDimensionZ = designerDimensions
+   print(f"{headerVersion}, {saveVersion}, {buildVersion}, {designerDimensionX}x{designerDimensionY}x{designerDimensionZ} with {len(ingredients)} ingredients, {len(buildableRecipes)} buildables, and {len(objects)} objects: {sbpFile}")
    for itemCount, item in sorted(ingredients, key=lambda l: l[0], reverse=True):
       print(f"   Ingredient {itemCount}x {sav_parse.pathNameToReadableName(item.pathName)}")
    for buildables in sorted(buildableRecipes, key=lambda l: sav_parse.pathNameToReadableName(l.pathName.replace("Recipe_", "Build_"))):
