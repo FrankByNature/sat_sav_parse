@@ -15,6 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import sys
 import zlib
 import string
 import struct
@@ -40,7 +41,7 @@ def parseBlueprint(sbpFile: str):
       if headerVersion != 2:
          return f"Unsupported header version {headerVersion}"
       (offset, saveVersion) = sav_parse.parseUint32(offset, data)
-      if saveVersion != 51 and saveVersion != 52 and saveVersion != 53 and saveVersion != 58 and saveVersion != 60:
+      if saveVersion != 51 and saveVersion != 52 and saveVersion != 53 and saveVersion != 58 and saveVersion != 59 and saveVersion != 60:
          return f"Unsupported save version {saveVersion}"
       (offset, buildVersion) = sav_parse.parseUint32(offset, data)
       (offset, designerDimensionX) = sav_parse.parseUint32(offset, data)
@@ -258,19 +259,39 @@ def resaveBlueprint(sbpFile, blueprint):
 
       fout.write(sdata)
 
-def printBlueprintSummary(blueprint, sbpFile):
+def printBlueprintSummary(blueprint, sbpFile, outFile = sys.stdout):
    versions, summary, objectHeaders, objects = blueprint
    headerVersion, saveVersion, buildVersion, saveObjectVersionData = versions
    designerDimensions, ingredients, buildableRecipes = summary
    if isinstance(designerDimensions, int):
       designerDimensions = (designerDimensions, designerDimensions, designerDimensions)
    designerDimensionX, designerDimensionY, designerDimensionZ = designerDimensions
-   print(f"{headerVersion}, {saveVersion}, {buildVersion}, {designerDimensionX}x{designerDimensionY}x{designerDimensionZ} with {len(ingredients)} ingredients, {len(buildableRecipes)} buildables, and {len(objects)} objects: {sbpFile}")
+   print(f"{headerVersion}, {saveVersion}, {buildVersion}, {designerDimensionX}x{designerDimensionY}x{designerDimensionZ} with {len(ingredients)} ingredients, {len(buildableRecipes)} buildables, and {len(objects)} objects: {sbpFile}", file=outFile)
    for itemCount, item in sorted(ingredients, key=lambda l: l[0], reverse=True):
-      print(f"   Ingredient {itemCount}x {sav_parse.pathNameToReadableName(item.pathName)}")
+      print(f"   Ingredient {itemCount}x {sav_parse.pathNameToReadableName(item.pathName)}", file=outFile)
    for buildables in sorted(buildableRecipes, key=lambda l: sav_parse.pathNameToReadableName(l.pathName.replace("Recipe_", "Build_"))):
       buildingPathName = buildables.pathName.replace("Recipe_", "Build_")
-      print(f"   Buildable {sav_parse.pathNameToReadableName(buildingPathName)}")
+      print(f"   Buildable {sav_parse.pathNameToReadableName(buildingPathName)}", file=outFile)
+
+   recipes = {}
+   for objIdx in range(len(objectHeaders)):
+      objectHeader = objectHeaders[objIdx]
+      object = objects[objIdx]
+      if isinstance(objectHeader, sav_parse.ActorHeader) and len(object) == 5:
+         currentRecipe = sav_parse.getPropertyValue(object[2], "mCurrentRecipe")
+         if currentRecipe is not None:
+            pendingPotential = sav_parse.getPropertyValue(object[2], "mPendingPotential")
+            if pendingPotential is None:
+               pendingPotential = 1.0
+            if currentRecipe.pathName in recipes:
+               recipes[currentRecipe.pathName][0] += pendingPotential
+            else:
+               recipes[currentRecipe.pathName] = [pendingPotential, objectHeader.typePath]
+   if len(recipes) > 0:
+      print("Recipes:", file=outFile)
+      for recipePathName in sorted(recipes):
+         fraction, machineTypePath = recipes[recipePathName]
+         print(f"   '{sav_parse.pathNameToReadableName(recipePathName)}' @ {fraction*100:.4f}% ({fraction:.6f}) in {sav_parse.pathNameToReadableName(machineTypePath)}", file=outFile)
 
 def parseBlueprintConfig(sbpcfgFile):
    with open(sbpcfgFile, "rb") as fin:
@@ -381,15 +402,15 @@ if __name__ == '__main__':
             if RESAVE_TEST:
                resaveBlueprint(TEST_OUTPUT_FILE_SBP, blueprint)
                parseBlueprint(TEST_OUTPUT_FILE_SBP)
-            if len(fileList) == 1:
-               outBase = os.path.splitext(filepath)[0]
-               with open(f"{outBase}-dump.txt", "w") as fout:
-                  versions, summary, objectHeaders, objects = blueprint
-                  fout.write(sav_parse.toString(versions)+"\n")
-                  fout.write(sav_parse.toString(summary)+"\n")
-                  for idx in range(len(objects)):
-                     fout.write(sav_parse.toString(objectHeaders[idx])+"\n")
-                     fout.write("   "+sav_parse.toString(objects[idx])+"\n")
+            outBase = os.path.splitext(filepath)[0]
+            with open(f"{outBase}-dump.txt", "w", encoding="utf-8") as fout:
+               printBlueprintSummary(blueprint, filepath, fout)
+               versions, summary, objectHeaders, objects = blueprint
+               fout.write(sav_parse.toString(versions)+"\n")
+               fout.write(sav_parse.toString(summary)+"\n")
+               for idx in range(len(objects)):
+                  fout.write(sav_parse.toString(objectHeaders[idx])+"\n")
+                  fout.write("   " + sav_parse.toString(objects[idx]) + "\n")
       elif filepath.endswith(".sbpcfg"):
          config = parseBlueprintConfig(filepath)
          version, description, iconId, iconColor, referencedIconLibrary, iconLibraryType, editors, serviceProvider, playerInfoTableIndex = config

@@ -668,14 +668,14 @@ class Object: # Both ActorObject and ComponentObject
                      nine.append(three)
                   chainBeltElements.append(nine)
 
-               (offset, buint32a) = parseUint32(offset, data)
-               (offset, buint32b) = parseUint32(offset, data)
-               (offset, buint32c) = parseUint32(offset, data)
+               (offset, bfloata) = parseFloat(offset, data)
+               (offset, bfloatb) = parseFloat(offset, data)
+               (offset, bfloatc) = parseFloat(offset, data)
                (offset, beltLeadItemIndex) = parseInt32(offset, data)
                (offset, beltTailItemIndex) = parseInt32(offset, data)
                offset = confirmBasicType(offset, data, parseUint32, idx)
 
-               chainBelts.append([levelPathName_belt, chainBeltElements, buint32a, buint32b, buint32c, beltLeadItemIndex, beltTailItemIndex])
+               chainBelts.append([levelPathName_belt, chainBeltElements, bfloata, bfloatb, bfloatc, beltLeadItemIndex, beltTailItemIndex])
 
             (offset, cuint32) = parseUint32(offset, data)
             (offset, maximumItems) = parseInt32(offset, data)
@@ -701,6 +701,10 @@ class Object: # Both ActorObject and ComponentObject
                self.actorSpecificInfo = False
          elif actorOrComponentObjectHeader.typePath in ( # Only observed in modded save
                "/AB_CableMod/Cables_Heavy/Build_AB-PLHeavy-Cu.Build_AB-PLHeavy-Cu_C",
+               "/AB_CableMod/Cables_Standard/Build_AB-PLStandard-Cu.Build_AB-PLStandard-Cu_C",
+               "/AB_CableMod/Cables_Wire/Build_AB-PLWire-Au.Build_AB-PLWire-Au_C",
+               "/AB_CableMod/Cables_Wire/Build_AB-PLWire-Si.Build_AB-PLWire-Si_C",
+               "/AB_CableMod/Cables_Wire/Build_AB-PLWire-Cu.Build_AB-PLWire-Cu_C",
                "/FlexSplines/Conveyor/Build_Belt2.Build_Belt2_C",
                "/FlexSplines/PowerLine/Build_FlexPowerline.Build_FlexPowerline_C",
                "/Game/FactoryGame/Buildable/Vehicle/Golfcart/BP_GolfcartGold.BP_GolfcartGold_C",
@@ -726,6 +730,7 @@ class Object: # Both ActorObject and ComponentObject
                "/Script/FactoryGame.FGVehicleAutopilotComponent",
                "/Script/FicsitFarming.FFDoggoHealthInfoComponent", # Only observed in modded save
                "/EditSwatchNames/DataHolder.DataHolder_C",         # Only observed in modded save
+               "/Script/RefinedRDLib.RRDLModularBuildingHandler",  # Modded: Refined R&D Mods (Refined Power, Ficsit Farming etc)
                ):
             self.actorSpecificInfo = offset < offsetStartThis + objectSize
             if self.actorSpecificInfo: # some-nuclear.sav
@@ -738,6 +743,7 @@ class Object: # Both ActorObject and ComponentObject
             if actorOrComponentObjectHeader.typePath in (
                   "/Script/FactoryGame.FGBlueprintProxy",
                   "/Script/FactoryGame.FGCentralStorageSubsystem",
+                  "/Script/FactoryGame.FGDockingStationIdentifier",
                   "/Script/FactoryGame.FGDockingStationInfo",
                   "/Script/FactoryGame.FGDrivingTargetList",
                   "/Script/FactoryGame.FGDroneStationInfo",
@@ -753,6 +759,7 @@ class Object: # Both ActorObject and ComponentObject
                   "/Script/FactoryGame.FGScannableSubsystem",
                   "/Script/FactoryGame.FGStatisticsSubsystem",
                   "/Script/FactoryGame.FGTrainStationIdentifier",
+                  "/Script/FactoryGame.FGWheeledVehicleIdentifier",
                   "/Script/FactoryGame.FGWheeledVehicleInfo",
                   "/Script/FactoryGame.FGWorldSettings"):
                offset = confirmBasicType(offset, data, parseUint32, 0)
@@ -765,7 +772,8 @@ class Object: # Both ActorObject and ComponentObject
                   "/Script/FactoryGame.FGHighlightedMarker_MapMarker",
                   "/Script/FactoryGame.FGPlayerHotbar",
                   "/Script/FactoryGame.FGPowerCircuit",
-                  "/Script/FactoryGame.FGRecipeShortcut"):
+                  "/Script/FactoryGame.FGRecipeShortcut",
+                  "/Script/FactoryGame.FGVehiclePathNetwork"):
                offset = confirmBasicType(offset, data, parseUint32, 0)
 
       if offset > offsetStartThis + objectSize:
@@ -1334,6 +1342,8 @@ def parseProperties(currentEntitySaveVersion: int, offset: int, data: list, obje
                   "SignComponentVariableMetaData", # Only observed in modded save
                   "SwatchGroupData",               # Only observed in modded save
                   "USSSwatchSaveInfo",             # Only observed in modded save
+                  "RPAttachmentData",              # Modded: Refined Power
+                  "RPAttachmentPointData",         # Modded: Refined Power
                   ):
                for jdx in range(arrayCount):
                   (offset, prop, propTypes) = parseProperties(currentEntitySaveVersion, offset, data, objectUE5Version)
@@ -1476,6 +1486,8 @@ def parseProperties(currentEntitySaveVersion: int, offset: int, data: list, obje
                "LBBalancerData",      # Only observed in modded save
                "ManagedSignData",     # Only observed in modded save
                "Struct_PC_PartInfo",  # Only observed in modded save
+               "RPPowerOptions",         # Modded: Refined Power
+               "RPFullProductionHandle", # Modded: Refined Power
                ):
             (offset, prop, propTypes) = parseProperties(currentEntitySaveVersion, offset, data, objectUE5Version)
             properties.append([propertyName, [prop, propTypes]])
